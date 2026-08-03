@@ -212,7 +212,9 @@ class MainActivity : ComponentActivity() {
             server?.start()
 
             val ip = getHotspotIpAddress()
-            pageUrl.value = "http://$ip:8080"
+            val url = "http://$ip:8080"
+            pageUrl.value = url
+            urlQrBitmap.value = generateQrCode(url)
         } catch (e: Exception) {
             statusText.value = "Server failed to start: ${e.message}"
         }
