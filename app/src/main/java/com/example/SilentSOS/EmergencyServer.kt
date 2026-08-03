@@ -1,24 +1,29 @@
 package com.example.SilentSOS
 
 import fi.iki.elonen.NanoHTTPD
+import java.util.Collections
+
+data class ChatMessage(val fromHelper: Boolean, val text: String)
 
 class EmergencyServer(
     port: Int,
     private val onHelperConnected: () -> Unit,
-    private val onMessageReceived: (String) -> Unit
+    private val onConversationUpdated: (List<ChatMessage>) -> Unit
 ) : NanoHTTPD(port) {
 
-    // Messages from the victim (app) to show to the helper (browser)
-    @Volatile
-    var latestVictimReply: String = ""
-
+    private val conversation = Collections.synchronizedList(mutableListOf<ChatMessage>())
     private var helperHasConnected = false
+
+    // Called by the victim's app when they send a reply
+    fun addVictimMessage(text: String) {
+        conversation.add(ChatMessage(fromHelper = false, text = text))
+        onConversationUpdated(conversation.toList())
+    }
 
     override fun serve(session: IHTTPSession): Response {
         return when {
             session.method == Method.GET && session.uri == "/poll" -> {
-                // Browser asks: "any new reply from the victim?"
-                newFixedLengthResponse(Response.Status.OK, "text/plain", latestVictimReply)
+                newFixedLengthResponse(Response.Status.OK, "text/plain", serializeConversation())
             }
             session.method == Method.GET -> {
                 if (!helperHasConnected) {
@@ -33,11 +38,18 @@ class EmergencyServer(
                 val body = files["postData"] ?: ""
                 val message = extractMessage(body)
                 if (message.isNotBlank()) {
-                    onMessageReceived(message)
+                    conversation.add(ChatMessage(fromHelper = true, text = message))
+                    onConversationUpdated(conversation.toList())
                 }
                 newFixedLengthResponse(Response.Status.OK, "text/plain", "received")
             }
             else -> newFixedLengthResponse(Response.Status.METHOD_NOT_ALLOWED, "text/plain", "Not allowed")
+        }
+    }
+
+    private fun serializeConversation(): String {
+        return conversation.joinToString("\n") { msg ->
+            (if (msg.fromHelper) "H" else "V") + "|" + msg.text.replace("\n", " ")
         }
     }
 
@@ -57,7 +69,9 @@ class EmergencyServer(
                     h2 { color: #ff5555; }
                     input, button { font-size: 18px; padding: 10px; margin-top: 10px; width: 100%; box-sizing: border-box; }
                     button { background: #ff5555; color: white; border: none; border-radius: 6px; }
-                    #replyBox { margin-top: 20px; padding: 12px; background: #222; border-radius: 6px; min-height: 40px; }
+                    #chatBox { margin-top: 20px; padding: 12px; background: #222; border-radius: 6px; min-height: 100px; }
+                    .helperMsg { color: #7fd1ff; margin: 6px 0; }
+                    .victimMsg { color: #ffd27f; margin: 6px 0; text-align: right; }
                 </style>
             </head>
             <body>
@@ -67,9 +81,8 @@ class EmergencyServer(
                     <input type="text" id="msgInput" placeholder="Type your message..." required>
                     <button type="submit">Send</button>
                 </form>
-                <p id="status"></p>
 
-                <div id="replyBox">Waiting for reply...</div>
+                <div id="chatBox">Waiting for messages...</div>
 
                 <script>
                     document.getElementById('msgForm').addEventListener('submit', function(e) {
@@ -80,20 +93,30 @@ class EmergencyServer(
                             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                             body: 'message=' + encodeURIComponent(msg)
                         }).then(function() {
-                            document.getElementById('status').innerText = 'Message sent!';
                             document.getElementById('msgInput').value = '';
                         });
                     });
 
-                    // Check every 2 seconds for a reply from the victim
+                    function renderConversation(text) {
+                        var box = document.getElementById('chatBox');
+                        if (!text || text.trim().length === 0) {
+                            box.innerHTML = 'Waiting for messages...';
+                            return;
+                        }
+                        var lines = text.split('\n');
+                        box.innerHTML = lines.map(function(line) {
+                            var isHelper = line.startsWith('H|');
+                            var content = line.substring(2);
+                            var cls = isHelper ? 'helperMsg' : 'victimMsg';
+                            var label = isHelper ? 'You' : 'Victim';
+                            return '<div class="' + cls + '"><strong>' + label + ':</strong> ' + content + '</div>';
+                        }).join('');
+                    }
+
                     setInterval(function() {
                         fetch('/poll')
                             .then(function(res) { return res.text(); })
-                            .then(function(text) {
-                                if (text && text.trim().length > 0) {
-                                    document.getElementById('replyBox').innerText = text;
-                                }
-                            });
+                            .then(renderConversation);
                     }, 2000);
                 </script>
             </body>
