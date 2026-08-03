@@ -14,10 +14,14 @@ class EmergencyServer(
     private val conversation = Collections.synchronizedList(mutableListOf<ChatMessage>())
     private var helperHasConnected = false
 
-    // Called by the victim's app when they send a reply
+    // Called by the victim's app (MainActivity) when they send a reply
     fun addVictimMessage(text: String) {
-        conversation.add(ChatMessage(fromHelper = false, text = text))
-        onConversationUpdated(conversation.toList())
+        val snapshot: List<ChatMessage>
+        synchronized(conversation) {
+            conversation.add(ChatMessage(fromHelper = false, text = text))
+            snapshot = conversation.toList()
+        }
+        onConversationUpdated(snapshot)
     }
 
     override fun serve(session: IHTTPSession): Response {
@@ -38,8 +42,12 @@ class EmergencyServer(
                 val body = files["postData"] ?: ""
                 val message = extractMessage(body)
                 if (message.isNotBlank()) {
-                    conversation.add(ChatMessage(fromHelper = true, text = message))
-                    onConversationUpdated(conversation.toList())
+                    val snapshot: List<ChatMessage>
+                    synchronized(conversation) {
+                        conversation.add(ChatMessage(fromHelper = true, text = message))
+                        snapshot = conversation.toList()
+                    }
+                    onConversationUpdated(snapshot)
                 }
                 newFixedLengthResponse(Response.Status.OK, "text/plain", "received")
             }
@@ -48,7 +56,8 @@ class EmergencyServer(
     }
 
     private fun serializeConversation(): String {
-        return conversation.joinToString("\n") { msg ->
+        val snapshot = synchronized(conversation) { conversation.toList() }
+        return snapshot.joinToString("\n") { msg ->
             (if (msg.fromHelper) "H" else "V") + "|" + msg.text.replace("\n", " ")
         }
     }
@@ -75,10 +84,10 @@ class EmergencyServer(
                 </style>
             </head>
             <body>
-                <h2>🚨 Emergency Contact</h2>
+                <h2>Emergency Contact</h2>
                 <p>You are connected to someone who may need help. Send a message below.</p>
                 <form id="msgForm">
-                    <input type="text" id="msgInput" placeholder="Type your message..." required>
+                    <input type="text" id="msgInput" placeholder="Type your message..." required autocomplete="off">
                     <button type="submit">Send</button>
                 </form>
 
@@ -87,13 +96,18 @@ class EmergencyServer(
                 <script>
                     document.getElementById('msgForm').addEventListener('submit', function(e) {
                         e.preventDefault();
-                        var msg = document.getElementById('msgInput').value;
+                        var input = document.getElementById('msgInput');
+                        var msg = input.value;
+                        if (!msg || msg.trim().length === 0) { return; }
                         fetch('/', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                             body: 'message=' + encodeURIComponent(msg)
                         }).then(function() {
-                            document.getElementById('msgInput').value = '';
+                            input.value = '';
+                            fetchConversation();
+                        }).catch(function(err) {
+                            document.getElementById('chatBox').innerHTML += '<div style="color:red">Send failed: ' + err + '</div>';
                         });
                     });
 
@@ -113,11 +127,17 @@ class EmergencyServer(
                         }).join('');
                     }
 
-                    setInterval(function() {
+                    function fetchConversation() {
                         fetch('/poll')
                             .then(function(res) { return res.text(); })
-                            .then(renderConversation);
-                    }, 2000);
+                            .then(renderConversation)
+                            .catch(function(err) {
+                                document.getElementById('chatBox').innerHTML += '<div style="color:red">Poll failed: ' + err + '</div>';
+                            });
+                    }
+
+                    setInterval(fetchConversation, 2000);
+                    fetchConversation();
                 </script>
             </body>
             </html>
