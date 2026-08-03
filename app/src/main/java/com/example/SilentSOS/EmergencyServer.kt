@@ -50,11 +50,11 @@ class EmergencyServer(
                 try {
                     val files = HashMap<String, String>()
                     session.parseBody(files)
-                    val body = files["postData"] ?: ""
-                    Log.d(TAG, "POST raw body: '$body'")
 
-                    val message = extractMessage(body)
-                    Log.d(TAG, "Extracted message: '$message'")
+                    // NanoHTTPD auto-decodes application/x-www-form-urlencoded bodies
+                    // into session.getParms() instead of the files map.
+                    val message = session.parms["message"] ?: ""
+                    Log.d(TAG, "Extracted message from parms: '$message'")
 
                     if (message.isNotBlank()) {
                         val snapshot: List<ChatMessage>
@@ -83,11 +83,6 @@ class EmergencyServer(
         return snapshot.joinToString("\n") { msg ->
             (if (msg.fromHelper) "H" else "V") + "|" + msg.text.replace("\n", " ")
         }
-    }
-
-    private fun extractMessage(body: String): String {
-        return body.substringAfter("message=", "")
-            .replace("+", " ")
     }
 
     private fun htmlPage(): String {
