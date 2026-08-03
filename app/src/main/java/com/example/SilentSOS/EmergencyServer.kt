@@ -2,25 +2,38 @@ package com.example.SilentSOS
 
 import fi.iki.elonen.NanoHTTPD
 
-class EmergencyServer(port: Int) : NanoHTTPD(port) {
+class EmergencyServer(
+    port: Int,
+    private val onHelperConnected: () -> Unit,
+    private val onMessageReceived: (String) -> Unit
+) : NanoHTTPD(port) {
 
-    // Stores messages sent by the helper, so we can show them later in the app
-    val messages = mutableListOf<String>()
+    // Messages from the victim (app) to show to the helper (browser)
+    @Volatile
+    var latestVictimReply: String = ""
+
+    private var helperHasConnected = false
 
     override fun serve(session: IHTTPSession): Response {
-        return when (session.method) {
-            Method.GET -> {
-                // Serve the chat page
+        return when {
+            session.method == Method.GET && session.uri == "/poll" -> {
+                // Browser asks: "any new reply from the victim?"
+                newFixedLengthResponse(Response.Status.OK, "text/plain", latestVictimReply)
+            }
+            session.method == Method.GET -> {
+                if (!helperHasConnected) {
+                    helperHasConnected = true
+                    onHelperConnected()
+                }
                 newFixedLengthResponse(Response.Status.OK, "text/html", htmlPage())
             }
-            Method.POST -> {
-                // Helper sent a message
+            session.method == Method.POST -> {
                 val files = HashMap<String, String>()
                 session.parseBody(files)
                 val body = files["postData"] ?: ""
                 val message = extractMessage(body)
                 if (message.isNotBlank()) {
-                    messages.add(message)
+                    onMessageReceived(message)
                 }
                 newFixedLengthResponse(Response.Status.OK, "text/plain", "received")
             }
@@ -29,7 +42,6 @@ class EmergencyServer(port: Int) : NanoHTTPD(port) {
     }
 
     private fun extractMessage(body: String): String {
-        // body looks like: message=Hello+there
         return body.substringAfter("message=", "")
             .replace("+", " ")
     }
@@ -45,6 +57,7 @@ class EmergencyServer(port: Int) : NanoHTTPD(port) {
                     h2 { color: #ff5555; }
                     input, button { font-size: 18px; padding: 10px; margin-top: 10px; width: 100%; box-sizing: border-box; }
                     button { background: #ff5555; color: white; border: none; border-radius: 6px; }
+                    #replyBox { margin-top: 20px; padding: 12px; background: #222; border-radius: 6px; min-height: 40px; }
                 </style>
             </head>
             <body>
@@ -55,6 +68,8 @@ class EmergencyServer(port: Int) : NanoHTTPD(port) {
                     <button type="submit">Send</button>
                 </form>
                 <p id="status"></p>
+
+                <div id="replyBox">Waiting for reply...</div>
 
                 <script>
                     document.getElementById('msgForm').addEventListener('submit', function(e) {
@@ -69,6 +84,17 @@ class EmergencyServer(port: Int) : NanoHTTPD(port) {
                             document.getElementById('msgInput').value = '';
                         });
                     });
+
+                    // Check every 2 seconds for a reply from the victim
+                    setInterval(function() {
+                        fetch('/poll')
+                            .then(function(res) { return res.text(); })
+                            .then(function(text) {
+                                if (text && text.trim().length > 0) {
+                                    document.getElementById('replyBox').innerText = text;
+                                }
+                            });
+                    }, 2000);
                 </script>
             </body>
             </html>
