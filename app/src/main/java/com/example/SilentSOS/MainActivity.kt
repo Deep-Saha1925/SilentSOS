@@ -70,39 +70,6 @@ class MainActivity : ComponentActivity() {
                         verticalArrangement = Arrangement.Center
                     ) {
 
-                        val connected by helperConnected
-                        val messages by receivedMessages
-                        val reply by replyInput
-
-                        if (connected) {
-                            Text(
-                                text = "✅ Someone connected! You can chat now.",
-                                modifier = Modifier.padding(top = 24.dp)
-                            )
-
-                            messages.forEach { msg ->
-                                Text(text = "Helper: $msg", modifier = Modifier.padding(top = 8.dp))
-                            }
-
-                            androidx.compose.material3.OutlinedTextField(
-                                value = reply,
-                                onValueChange = { replyInput.value = it },
-                                label = { Text("Type your reply") },
-                                modifier = Modifier.padding(top = 16.dp)
-                            )
-
-                            Button(
-                                onClick = {
-                                    server?.latestVictimReply = reply
-                                    replyInput.value = ""
-                                },
-                                modifier = Modifier.padding(top = 8.dp)
-                            ) {
-                                Text("Send Reply")
-                            }
-                        }
-
-
                         val status by statusText
                         val bitmap by qrBitmap
                         val url by pageUrl
@@ -133,6 +100,39 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                             Text(text = url)
+                        }
+
+
+                        val connected by helperConnected
+                        val messages by receivedMessages
+                        val reply by replyInput
+
+                        if (connected) {
+                            Text(
+                                text = "✅ Someone connected! You can chat now.",
+                                modifier = Modifier.padding(top = 24.dp)
+                            )
+
+                            messages.forEach { msg ->
+                                Text(text = "Helper: $msg", modifier = Modifier.padding(top = 8.dp))
+                            }
+
+                            androidx.compose.material3.OutlinedTextField(
+                                value = reply,
+                                onValueChange = { replyInput.value = it },
+                                label = { Text("Type your reply") },
+                                modifier = Modifier.padding(top = 16.dp)
+                            )
+
+                            Button(
+                                onClick = {
+                                    server?.latestVictimReply = reply
+                                    replyInput.value = ""
+                                },
+                                modifier = Modifier.padding(top = 8.dp)
+                            ) {
+                                Text("Send Reply")
+                            }
                         }
                     }
                 }
