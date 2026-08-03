@@ -164,13 +164,21 @@ class MainActivity : ComponentActivity() {
 
     private fun startServer() {
         try {
-            server = EmergencyServer(8080)
+            server = EmergencyServer(
+                port = 8080,
+                onHelperConnected = {
+                    runOnUiThread { helperConnected.value = true }
+                },
+                onMessageReceived = { msg ->
+                    runOnUiThread {
+                        receivedMessages.value = receivedMessages.value + msg
+                    }
+                }
+            )
             server?.start()
 
             val ip = getHotspotIpAddress()
-            val url = "http://$ip:8080"
-            pageUrl.value = url
-            urlQrBitmap.value = generateQrCode(url)
+            pageUrl.value = "http://$ip:8080"
         } catch (e: Exception) {
             statusText.value = "Server failed to start: ${e.message}"
         }
