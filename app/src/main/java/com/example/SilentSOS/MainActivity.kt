@@ -42,6 +42,10 @@ class MainActivity : ComponentActivity() {
 
     private var ipsBeforeHotspot: Set<String> = emptySet()
 
+    private var helperConnected = mutableStateOf(false);
+    private var receivedMessages = mutableStateOf(listOf<String>());
+    private var replyInput = mutableStateOf("");
+
     private val requestPermissions =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
             val allGranted = results.values.all { it }
