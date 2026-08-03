@@ -14,7 +14,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
@@ -28,8 +32,6 @@ import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import java.net.NetworkInterface
 import java.util.Collections
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 
 class MainActivity : ComponentActivity() {
 
@@ -70,12 +72,15 @@ class MainActivity : ComponentActivity() {
                             .fillMaxSize()
                             .padding(24.dp)
                             .verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.Center
+                        verticalArrangement = Arrangement.Top
                     ) {
-
                         val status by statusText
                         val bitmap by qrBitmap
                         val url by pageUrl
+                        val urlQr by urlQrBitmap
+                        val connected by helperConnected
+                        val chatList by conversation
+                        val reply by replyInput
 
                         Text(text = status)
 
@@ -92,9 +97,8 @@ class MainActivity : ComponentActivity() {
                             )
                         }
 
-                        val urlQr by urlQrBitmap
                         if (url.isNotBlank()) {
-                            Text(text = "Step 2: Scan to open chat page(Via Google lens)", modifier = Modifier.padding(top = 24.dp))
+                            Text(text = "Step 2: Scan to open chat page", modifier = Modifier.padding(top = 24.dp))
                             urlQr?.let {
                                 Image(
                                     bitmap = it.asImageBitmap(),
@@ -102,16 +106,12 @@ class MainActivity : ComponentActivity() {
                                     modifier = Modifier.size(200.dp)
                                 )
                             }
-                            Text(text = url)
+                            Text(text = url, style = MaterialTheme.typography.headlineSmall)
                         }
-
-                        val connected by helperConnected
-                        val chatList by conversation
-                        val reply by replyInput
 
                         if (connected) {
                             Text(
-                                text = "✅ Someone connected! You can chat now.",
+                                text = "Someone connected! You can chat now.",
                                 modifier = Modifier.padding(top = 24.dp)
                             )
 
@@ -120,7 +120,7 @@ class MainActivity : ComponentActivity() {
                                 Text(text = "$label: ${msg.text}", modifier = Modifier.padding(top = 8.dp))
                             }
 
-                            androidx.compose.material3.OutlinedTextField(
+                            OutlinedTextField(
                                 value = reply,
                                 onValueChange = { replyInput.value = it },
                                 label = { Text("Type your reply") },
@@ -129,8 +129,10 @@ class MainActivity : ComponentActivity() {
 
                             Button(
                                 onClick = {
-                                    server?.addVictimMessage(reply)
-                                    replyInput.value = ""
+                                    if (reply.isNotBlank()) {
+                                        server?.addVictimMessage(reply)
+                                        replyInput.value = ""
+                                    }
                                 },
                                 modifier = Modifier.padding(top = 8.dp)
                             ) {
@@ -181,7 +183,6 @@ class MainActivity : ComponentActivity() {
                 val wifiQrText = "WIFI:S:$ssid;T:WPA;P:$password;;"
                 qrBitmap.value = generateQrCode(wifiQrText)
 
-                // Start the local web server
                 startServer()
             }
 
@@ -190,6 +191,8 @@ class MainActivity : ComponentActivity() {
                 qrBitmap.value = null
                 pageUrl.value = ""
                 urlQrBitmap.value = null
+                helperConnected.value = false
+                conversation.value = emptyList()
                 stopServer()
             }
 
@@ -207,9 +210,7 @@ class MainActivity : ComponentActivity() {
                     runOnUiThread { helperConnected.value = true }
                 },
                 onConversationUpdated = { updatedList ->
-                    runOnUiThread {
-                        conversation.value = updatedList
-                    }
+                    runOnUiThread { conversation.value = updatedList }
                 }
             )
             server?.start()
@@ -228,7 +229,6 @@ class MainActivity : ComponentActivity() {
         server = null
     }
 
-    // Finds the phone's own IP address on the hotspot network
     private fun getAllLocalIps(): Set<String> {
         val result = mutableSetOf<String>()
         val interfaces = Collections.list(NetworkInterface.getNetworkInterfaces())
@@ -248,7 +248,6 @@ class MainActivity : ComponentActivity() {
         val newIps = currentIps - ipsBeforeHotspot
         return newIps.firstOrNull() ?: "NOT FOUND - before: $ipsBeforeHotspot, after: $currentIps"
     }
-
 
     private fun generateQrCode(text: String, size: Int = 512): Bitmap {
         val writer = QRCodeWriter()
