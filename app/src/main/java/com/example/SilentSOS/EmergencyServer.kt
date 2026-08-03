@@ -99,7 +99,6 @@ class EmergencyServer(
                     #chatBox { margin-top: 20px; padding: 12px; background: #222; border-radius: 6px; min-height: 100px; }
                     .helperMsg { color: #7fd1ff; margin: 6px 0; }
                     .victimMsg { color: #ffd27f; margin: 6px 0; text-align: right; }
-                    #debugLog { margin-top: 20px; font-size: 12px; color: #888; white-space: pre-wrap; }
                 </style>
             </head>
             <body>
@@ -111,33 +110,22 @@ class EmergencyServer(
                 </form>
 
                 <div id="chatBox">Waiting for messages...</div>
-                <div id="debugLog"></div>
 
                 <script>
-                    function log(msg) {
-                        var d = document.getElementById('debugLog');
-                        d.innerText += msg + '\n';
-                    }
-
                     document.getElementById('msgForm').addEventListener('submit', function(e) {
                         e.preventDefault();
                         var input = document.getElementById('msgInput');
                         var msg = input.value;
                         if (!msg || msg.trim().length === 0) { return; }
-                        log('Sending: ' + msg);
                         fetch('/', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                             body: 'message=' + encodeURIComponent(msg)
-                        }).then(function(res) {
-                            log('Send response status: ' + res.status);
-                            return res.text();
-                        }).then(function(text) {
-                            log('Send response body: ' + text);
+                        }).then(function() {
                             input.value = '';
                             fetchConversation();
                         }).catch(function(err) {
-                            log('Send ERROR: ' + err);
+                            console.error('Send failed', err);
                         });
                     });
 
@@ -160,12 +148,9 @@ class EmergencyServer(
                     function fetchConversation() {
                         fetch('/poll')
                             .then(function(res) { return res.text(); })
-                            .then(function(text) {
-                                log('Poll got: ' + JSON.stringify(text));
-                                renderConversation(text);
-                            })
+                            .then(renderConversation)
                             .catch(function(err) {
-                                log('Poll ERROR: ' + err);
+                                console.error('Poll failed', err);
                             });
                     }
 
