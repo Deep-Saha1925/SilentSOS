@@ -44,9 +44,9 @@ class MainActivity : ComponentActivity() {
 
     private var ipsBeforeHotspot: Set<String> = emptySet()
 
-    private var helperConnected = mutableStateOf(false);
-    private var receivedMessages = mutableStateOf(listOf<String>());
-    private var replyInput = mutableStateOf("");
+    private var helperConnected = mutableStateOf(false)
+    private var conversation = mutableStateOf(listOf<ChatMessage>())
+    private var replyInput = mutableStateOf("")
 
     private val requestPermissions =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
@@ -105,9 +105,8 @@ class MainActivity : ComponentActivity() {
                             Text(text = url)
                         }
 
-
                         val connected by helperConnected
-                        val messages by receivedMessages
+                        val chatList by conversation
                         val reply by replyInput
 
                         if (connected) {
@@ -116,8 +115,9 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier.padding(top = 24.dp)
                             )
 
-                            messages.forEach { msg ->
-                                Text(text = "Helper: $msg", modifier = Modifier.padding(top = 8.dp))
+                            chatList.forEach { msg ->
+                                val label = if (msg.fromHelper) "Helper" else "You"
+                                Text(text = "$label: ${msg.text}", modifier = Modifier.padding(top = 8.dp))
                             }
 
                             androidx.compose.material3.OutlinedTextField(
@@ -129,7 +129,7 @@ class MainActivity : ComponentActivity() {
 
                             Button(
                                 onClick = {
-                                    server?.latestVictimReply = reply
+                                    server?.addVictimMessage(reply)
                                     replyInput.value = ""
                                 },
                                 modifier = Modifier.padding(top = 8.dp)
@@ -206,9 +206,9 @@ class MainActivity : ComponentActivity() {
                 onHelperConnected = {
                     runOnUiThread { helperConnected.value = true }
                 },
-                onMessageReceived = { msg ->
+                onConversationUpdated = { updatedList ->
                     runOnUiThread {
-                        receivedMessages.value = receivedMessages.value + msg
+                        conversation.value = updatedList
                     }
                 }
             )
