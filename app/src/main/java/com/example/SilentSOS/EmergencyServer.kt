@@ -1,5 +1,6 @@
 package com.example.SilentSOS
 
+import android.util.Log
 import fi.iki.elonen.NanoHTTPD
 import java.util.Collections
 
@@ -11,45 +12,67 @@ class EmergencyServer(
     private val onConversationUpdated: (List<ChatMessage>) -> Unit
 ) : NanoHTTPD(port) {
 
+    companion object {
+        private const val TAG = "SilentSOS_Server"
+    }
+
     private val conversation = Collections.synchronizedList(mutableListOf<ChatMessage>())
     private var helperHasConnected = false
 
-    // Called by the victim's app (MainActivity) when they send a reply
     fun addVictimMessage(text: String) {
         val snapshot: List<ChatMessage>
         synchronized(conversation) {
             conversation.add(ChatMessage(fromHelper = false, text = text))
             snapshot = conversation.toList()
         }
+        Log.d(TAG, "Victim added message: $text | total messages: ${snapshot.size}")
         onConversationUpdated(snapshot)
     }
 
     override fun serve(session: IHTTPSession): Response {
+        Log.d(TAG, "Incoming request: method=${session.method} uri=${session.uri}")
+
         return when {
             session.method == Method.GET && session.uri == "/poll" -> {
-                newFixedLengthResponse(Response.Status.OK, "text/plain", serializeConversation())
+                val body = serializeConversation()
+                Log.d(TAG, "Poll request served. Body length=${body.length}")
+                newFixedLengthResponse(Response.Status.OK, "text/plain", body)
             }
             session.method == Method.GET -> {
                 if (!helperHasConnected) {
                     helperHasConnected = true
+                    Log.d(TAG, "Helper connected for the first time")
                     onHelperConnected()
                 }
                 newFixedLengthResponse(Response.Status.OK, "text/html", htmlPage())
             }
             session.method == Method.POST -> {
-                val files = HashMap<String, String>()
-                session.parseBody(files)
-                val body = files["postData"] ?: ""
-                val message = extractMessage(body)
-                if (message.isNotBlank()) {
-                    val snapshot: List<ChatMessage>
-                    synchronized(conversation) {
-                        conversation.add(ChatMessage(fromHelper = true, text = message))
-                        snapshot = conversation.toList()
+                try {
+                    val files = HashMap<String, String>()
+                    session.parseBody(files)
+                    val body = files["postData"] ?: ""
+                    Log.d(TAG, "POST raw body: '$body'")
+
+                    val message = extractMessage(body)
+                    Log.d(TAG, "Extracted message: '$message'")
+
+                    if (message.isNotBlank()) {
+                        val snapshot: List<ChatMessage>
+                        synchronized(conversation) {
+                            conversation.add(ChatMessage(fromHelper = true, text = message))
+                            snapshot = conversation.toList()
+                        }
+                        Log.d(TAG, "Helper message added. Total messages: ${snapshot.size}")
+                        onConversationUpdated(snapshot)
+                    } else {
+                        Log.w(TAG, "Message was blank after extraction, not adding")
                     }
-                    onConversationUpdated(snapshot)
+
+                    newFixedLengthResponse(Response.Status.OK, "text/plain", "received")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error handling POST", e)
+                    newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "text/plain", "error: ${e.message}")
                 }
-                newFixedLengthResponse(Response.Status.OK, "text/plain", "received")
             }
             else -> newFixedLengthResponse(Response.Status.METHOD_NOT_ALLOWED, "text/plain", "Not allowed")
         }
@@ -81,6 +104,7 @@ class EmergencyServer(
                     #chatBox { margin-top: 20px; padding: 12px; background: #222; border-radius: 6px; min-height: 100px; }
                     .helperMsg { color: #7fd1ff; margin: 6px 0; }
                     .victimMsg { color: #ffd27f; margin: 6px 0; text-align: right; }
+                    #debugLog { margin-top: 20px; font-size: 12px; color: #888; white-space: pre-wrap; }
                 </style>
             </head>
             <body>
@@ -92,22 +116,33 @@ class EmergencyServer(
                 </form>
 
                 <div id="chatBox">Waiting for messages...</div>
+                <div id="debugLog"></div>
 
                 <script>
+                    function log(msg) {
+                        var d = document.getElementById('debugLog');
+                        d.innerText += msg + '\n';
+                    }
+
                     document.getElementById('msgForm').addEventListener('submit', function(e) {
                         e.preventDefault();
                         var input = document.getElementById('msgInput');
                         var msg = input.value;
                         if (!msg || msg.trim().length === 0) { return; }
+                        log('Sending: ' + msg);
                         fetch('/', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                             body: 'message=' + encodeURIComponent(msg)
-                        }).then(function() {
+                        }).then(function(res) {
+                            log('Send response status: ' + res.status);
+                            return res.text();
+                        }).then(function(text) {
+                            log('Send response body: ' + text);
                             input.value = '';
                             fetchConversation();
                         }).catch(function(err) {
-                            document.getElementById('chatBox').innerHTML += '<div style="color:red">Send failed: ' + err + '</div>';
+                            log('Send ERROR: ' + err);
                         });
                     });
 
@@ -130,9 +165,12 @@ class EmergencyServer(
                     function fetchConversation() {
                         fetch('/poll')
                             .then(function(res) { return res.text(); })
-                            .then(renderConversation)
+                            .then(function(text) {
+                                log('Poll got: ' + JSON.stringify(text));
+                                renderConversation(text);
+                            })
                             .catch(function(err) {
-                                document.getElementById('chatBox').innerHTML += '<div style="color:red">Poll failed: ' + err + '</div>';
+                                log('Poll ERROR: ' + err);
                             });
                     }
 
